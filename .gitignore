@@ -1,0 +1,10 @@
+*.iml
+.gradle/
+build/
+local.properties
+.idea/
+*.apk
+# fetched by scripts/fetch-binaries.sh (large)
+app/src/main/jniLibs/
+app/src/main/assets/node_modules.zip
+app/src/main/assets/deps.json

@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- three server racks -->
+    <path android:fillColor="#FFFFFF" android:pathData="M34,30h40a4,4 0 0 1 4,4v4a4,4 0 0 1 -4,4h-40a4,4 0 0 1 -4,-4v-4a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M34,48h40a4,4 0 0 1 4,4v4a4,4 0 0 1 -4,4h-40a4,4 0 0 1 -4,-4v-4a4,4 0 0 1 4,-4z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M34,66h40a4,4 0 0 1 4,4v4a4,4 0 0 1 -4,4h-40a4,4 0 0 1 -4,-4v-4a4,4 0 0 1 4,-4z" />
+    <!-- status lights -->
+    <path android:fillColor="#0F766E" android:pathData="M39,36m-2.2,0a2.2,2.2 0 1 1 4.4,0a2.2,2.2 0 1 1 -4.4,0" />
+    <path android:fillColor="#0F766E" android:pathData="M39,54m-2.2,0a2.2,2.2 0 1 1 4.4,0a2.2,2.2 0 1 1 -4.4,0" />
+    <path android:fillColor="#0F766E" android:pathData="M39,72m-2.2,0a2.2,2.2 0 1 1 4.4,0a2.2,2.2 0 1 1 -4.4,0" />
+    <!-- vents -->
+    <path android:fillColor="#0F766E" android:pathData="M50,35h20v2h-20z M50,53h20v2h-20z M50,71h20v2h-20z" />
+</vector>
