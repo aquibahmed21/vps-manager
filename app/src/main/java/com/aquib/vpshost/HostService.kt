@@ -47,6 +47,9 @@ data class HostState(
     val publishedUrl: String? = null,
     val online: Boolean = true,
     val repoSha: String = "",
+    val repoDate: String = "",
+    /** When the website server (node) last started, epoch ms. */
+    val serverStartedAt: Long = 0,
     val busy: String = "",
     val logs: List<LogLine> = emptyList(),
 )
@@ -83,7 +86,8 @@ class HostService : Service() {
             .createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "vpshost:wifi").apply { setReferenceCounted(false); acquire() } }.getOrNull()
         watchNetwork()
         management = ManagementServer(this, prefs).also { it.start() }
-        state.update { it.copy(repoSha = prefs.repoSha) }
+        state.update { it.copy(repoSha = prefs.repoSha, repoDate = prefs.repoDate, serverStartedAt = System.currentTimeMillis()) }
+        Watchdog.scheduleDailyUpdate(this)
         Telemetry.init(this); Telemetry.start(this, scope)
         Telemetry.event("restart", "The VPS Host app started (after an app update, a crash or a phone restart).")
     }
@@ -91,7 +95,7 @@ class HostService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { shutdown(); return if (prefs.llmWant) START_STICKY else START_NOT_STICKY }
-            ACTION_UPDATE -> scope.launch { doUpdate() }
+            ACTION_UPDATE -> scope.launch { doUpdate(intent.getBooleanExtra("scheduled", false)) }
             ACTION_LLM_START -> { prefs.llmWant = true; startLlm(); return START_STICKY }
             ACTION_LLM_STOP -> { stopLlm(); if (!prefs.wantRunning) { stopSelf(); return START_NOT_STICKY }; return START_STICKY }
             ACTION_DL_START -> { startDownload(intent.getStringExtra("url") ?: ""); return START_STICKY }
@@ -183,7 +187,8 @@ class HostService : Service() {
         while (currentCoroutineContext().isActive) {
             try {
                 awaitNetwork()
-                if (!repo.repoPresent()) { status("Downloading server"); prefs.repoSha = repo.download({ log(it) }); state.update { it.copy(repoSha = prefs.repoSha) } }
+                if (prefs.repoSha.isNotEmpty() && prefs.repoDate.isEmpty()) repo.dateOf(prefs.repoSha)?.let { prefs.repoDate = it; state.update { s -> s.copy(repoDate = it) } }
+                if (!repo.repoPresent()) { status("Downloading server"); val v = repo.download({ log(it) }); prefs.repoSha = v.sha; prefs.repoDate = v.date; state.update { it.copy(repoSha = v.sha, repoDate = v.date) } }
                 repo.prepareRuntime({ log(it) })
                 ensureNode()
                 runTunnelCycle()
@@ -197,7 +202,7 @@ class HostService : Service() {
         status("Starting server")
         repeat(2) { attempt ->
             NodeService.start(this)
-            repeat(45) { if (portOpen()) { log("Node server is up on :${Config.SERVER_PORT}"); Telemetry.event("info", "The website server started and is answering."); state.update { it.copy(nodeUp = true) }; return }; delay(1000) }
+            repeat(45) { if (portOpen()) { log("Node server is up on :${Config.SERVER_PORT}"); Telemetry.event("info", "The website server started and is answering."); state.update { it.copy(nodeUp = true, serverStartedAt = System.currentTimeMillis()) }; return }; delay(1000) }
             log("Node did not come up (attempt ${attempt + 1}); restarting its process")
             NodeService.stop(this); delay(2000)
         }
@@ -244,14 +249,22 @@ class HostService : Service() {
         }
     }
 
-    private suspend fun doUpdate() {
+    private suspend fun doUpdate(scheduled: Boolean = false) {
         status("Updating server code")
         try {
             val before = prefs.repoSha
-            val sha = repo.download({ log(it) })
-            Telemetry.event(if (sha == before) "info" else "update", if (sha == before) "Checked for updates: the server code is already the latest version." else "The server code was updated to version ${sha.take(7)}.")
-            prefs.repoSha = sha; state.update { it.copy(repoSha = sha) }
-            nodeRestartRequested = true
+            // Scheduled (2 am) check: don't download or restart if GitHub is still on the same commit.
+            if (scheduled && before.isNotEmpty() && repo.repoPresent()) {
+                val remote = repo.remoteVersion()
+                if (remote == null || remote.sha == before) {
+                    if (remote != null && prefs.repoDate.isEmpty()) { prefs.repoDate = remote.date; state.update { it.copy(repoDate = remote.date) } }
+                    Telemetry.event("info", "Daily 2 am check: the server code is already the latest version."); status("Running"); return
+                }
+            }
+            val v = repo.download({ log(it) })
+            Telemetry.event(if (v.sha == before) "info" else "update", if (v.sha == before) "Checked for updates: the server code is already the latest version." else "The server code was updated to version ${v.sha.take(7)}.")
+            prefs.repoSha = v.sha; prefs.repoDate = v.date; state.update { it.copy(repoSha = v.sha, repoDate = v.date) }
+            if (v.sha != before) nodeRestartRequested = true
         } catch (e: Exception) { log("Update failed: ${e.message}", Lvl.ERROR) }
         status("Running")
     }
@@ -339,6 +352,6 @@ class HostService : Service() {
         fun download(c: Context, url: String) = c.startForegroundService(Intent(c, HostService::class.java).setAction(ACTION_DL_START).putExtra("url", url))
         fun cancelDownload(c: Context) = c.startForegroundService(Intent(c, HostService::class.java).setAction(ACTION_DL_CANCEL))
         fun stop(c: Context) { c.startService(Intent(c, HostService::class.java).setAction(ACTION_STOP)) }
-        fun update(c: Context) { c.startForegroundService(Intent(c, HostService::class.java).setAction(ACTION_UPDATE)) }
+        fun update(c: Context, scheduled: Boolean = false) { c.startForegroundService(Intent(c, HostService::class.java).setAction(ACTION_UPDATE).putExtra("scheduled", scheduled)) }
     }
 }

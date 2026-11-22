@@ -103,6 +103,8 @@ fun DashboardScreen(testProbe: Probe, verifyProbe: Probe, openSettings: () -> Un
         Panel("Server code") {
             StatusRow("Repository", "${Config.EXPRESS_OWNER}/${Config.EXPRESS_REPO}")
             StatusRow("Version", st.repoSha.take(7).ifEmpty { "Not downloaded" }, mono = true)
+            StatusRow("Version date", niceDate(st.repoDate))
+            StatusRow("Auto-check", "Every day at 2:00 am")
             SmallButton("Check for updates", { HostService.update(ctx) }, enabled = st.running)
         }
     }
@@ -119,3 +121,9 @@ private suspend fun verifyRepo(prefs: Prefs, current: String): Outcome {
         else -> Outcome(Kind.FAIL, "Mismatch", "Repository has:\n$repoUrl\nTunnel is:\n$current")
     }
 }
+
+/** "2026-11-22T19:00:00Z" -> "22 Nov 2026, 19:00" in local time. */
+fun niceDate(iso: String): String = runCatching {
+    val d = java.time.OffsetDateTime.parse(iso).atZoneSameInstant(java.time.ZoneId.systemDefault())
+    d.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", java.util.Locale.getDefault()))
+}.getOrDefault(if (iso.isEmpty()) "Unknown" else iso)

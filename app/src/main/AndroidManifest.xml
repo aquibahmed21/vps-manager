@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -55,6 +56,7 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".WatchdogReceiver" android:exported="false" />
+        <receiver android:name=".DailyUpdateReceiver" android:exported="false" />
 
         <receiver android:name=".AdminReceiver" android:exported="true"
             android:permission="android.permission.BIND_DEVICE_ADMIN">

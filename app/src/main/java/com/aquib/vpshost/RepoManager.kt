@@ -19,18 +19,28 @@ class RepoManager(private val ctx: Context) {
 
     fun repoPresent() = File(repoDir, "package.json").exists()
 
-    /** Latest commit SHA of the express repo, or null if offline. */
-    fun remoteSha(): String? = runCatching {
+    data class Version(val sha: String, val date: String)
+
+    /** Latest commit (sha + ISO commit date) of the express repo, or null if offline. */
+    fun remoteVersion(): Version? = runCatching {
         val c = URL(Config.EXPRESS_SHA_API).openConnection() as HttpURLConnection
-        c.setRequestProperty("Accept", "application/vnd.github.sha")
+        c.setRequestProperty("Accept", "application/vnd.github+json")
         c.connectTimeout = 10_000; c.readTimeout = 10_000
-        c.inputStream.bufferedReader().readText().trim().takeIf { it.length >= 7 }
+        val j = JSONObject(c.inputStream.bufferedReader().readText())
+        Version(j.getString("sha"), j.getJSONObject("commit").getJSONObject("committer").optString("date"))
+    }.getOrNull()
+
+    /** Commit date (ISO) of a given sha, used to fill in the date for a version downloaded before dates were tracked. */
+    fun dateOf(sha: String): String? = runCatching {
+        val c = URL(Config.EXPRESS_SHA_API.substringBeforeLast('/') + "/" + sha).openConnection() as HttpURLConnection
+        c.setRequestProperty("Accept", "application/vnd.github+json"); c.connectTimeout = 10_000; c.readTimeout = 10_000
+        JSONObject(c.inputStream.bufferedReader().readText()).getJSONObject("commit").getJSONObject("committer").getString("date")
     }.getOrNull()
 
     /** Downloads and replaces the repo contents. Returns the sha it corresponds to. */
-    fun download(log: (String) -> Unit): String {
+    fun download(log: (String) -> Unit): Version {
         baseDir.mkdirs()
-        val sha = remoteSha() ?: ""
+        val ver = remoteVersion() ?: Version("", ""); val sha = ver.sha
         log("Downloading ${Config.EXPRESS_OWNER}/${Config.EXPRESS_REPO}@${sha.take(7)} ...")
         val tmp = File(baseDir, "express.new").apply { deleteRecursively(); mkdirs() }
         val conn = URL(Config.EXPRESS_ZIP).openConnection() as HttpURLConnection
@@ -52,7 +62,7 @@ class RepoManager(private val ctx: Context) {
         if (!tmp.renameTo(repoDir)) throw IllegalStateException("Could not move repo into place")
         warnIfDepsChanged(log)
         log("Repo ready at ${repoDir.path}")
-        return sha
+        return ver
     }
 
     /** Copies bootstrap.js and unpacks node_modules.zip (bundled express deps) once per app version. */

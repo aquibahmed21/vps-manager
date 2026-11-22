@@ -8,6 +8,7 @@ class Prefs(context: Context) {
     var githubToken: String get() = p.getString("token", "") ?: ""; set(v) = p.edit().putString("token", v.trim()).apply()
     /** True once the user has pressed Start; stays true across restarts/reboots until Stop is pressed. */
     var wantRunning: Boolean get() = p.getBoolean("want", false); set(v) = p.edit().putBoolean("want", v).apply()
+    var repoDate: String get() = p.getString("sha_date", "") ?: ""; set(v) = p.edit().putString("sha_date", v).apply()
     var repoSha: String get() = p.getString("sha", "") ?: ""; set(v) = p.edit().putString("sha", v).apply()
     var lastPublishedUrl: String get() = p.getString("pub", "") ?: ""; set(v) = p.edit().putString("pub", v).apply()
 

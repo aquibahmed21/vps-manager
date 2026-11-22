@@ -158,7 +158,7 @@ class ManagementServer(private val ctx: Context, private val prefs: Prefs) {
         val ver = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull()
         return JSONObject()
             .put("server", JSONObject().put("running", st.running).put("nodeUp", st.nodeUp).put("online", st.online).put("busy", st.busy)
-                .put("tunnelUrl", st.tunnelUrl ?: JSONObject.NULL).put("publishedUrl", st.publishedUrl ?: JSONObject.NULL).put("repoSha", st.repoSha))
+                .put("tunnelUrl", st.tunnelUrl ?: JSONObject.NULL).put("publishedUrl", st.publishedUrl ?: JSONObject.NULL).put("repoSha", st.repoSha).put("repoDate", st.repoDate).put("startedAt", st.serverStartedAt))
             .put("llm", JSONObject().put("running", st.llm.running).put("ready", st.llm.ready).put("model", st.llm.model).put("busy", st.llm.busy)
                 .put("error", st.llm.error).put("download", JSONObject().put("name", st.llm.dlName).put("done", st.llm.dlDone).put("total", st.llm.dlTotal).put("error", st.llm.dlError)))
             .put("battery", JSONObject().put("level", bs.level).put("charging", bs.charging).put("tempC", temp).put("alarmEverySec", bs.beepEverySec))
