@@ -51,6 +51,17 @@ class NodeService : Service() {
             libc.setenv("MANAGE_PORT", Config.MANAGE_PORT.toString(), 1)
             // Family data lives beside the repo, not inside it, so "Update server" never wipes it.
             libc.setenv("FAMILY_DIR", java.io.File(repo.baseDir, "family").path, 1)
+            // Credentials and roles configured from the Settings screen.
+            val prefs = Prefs(this)
+            if (prefs.rootPhone.isNotBlank())       libc.setenv("ROOT_PHONE",       prefs.rootPhone,       1)
+            if (prefs.rootPassword.isNotBlank())  libc.setenv("ROOT_PASSWORD",    prefs.rootPassword,    1)
+            if (prefs.adminPhones.isNotBlank())   libc.setenv("ADMIN_PHONES",     prefs.adminPhones,     1)
+            if (prefs.adminPasswords.isNotBlank()) libc.setenv("ADMIN_PASSWORDS", prefs.adminPasswords,  1)
+            if (prefs.stunServer.isNotBlank())    libc.setenv("STUN_SERVER",     prefs.stunServer,     1)
+            if (prefs.turnServer.isNotBlank())    libc.setenv("TURN_SERVER",     prefs.turnServer,     1)
+            if (prefs.turnUsername.isNotBlank())  libc.setenv("TURN_USERNAME",   prefs.turnUsername,   1)
+            if (prefs.turnCredential.isNotBlank()) libc.setenv("TURN_CREDENTIAL", prefs.turnCredential, 1)
+            if (prefs.rootPin.isNotBlank())       libc.setenv("ROOT_PIN",        prefs.rootPin,        1)
             val node = Native.load("node", LibNode::class.java)
 
             // node (libuv) requires argv strings in ONE contiguous block.

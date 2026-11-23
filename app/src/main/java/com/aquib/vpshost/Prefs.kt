@@ -36,5 +36,27 @@ class Prefs(context: Context) {
         }
         set(v) = p.edit().putString("llm_key", v).apply()
 
+    // ── VoIP user roles ───────────────────────────────────────────────────────
+    /** Phone number granted root role in MeshCall (can manage all users). */
+    var rootPhone: String get() = p.getString("root_phone", "") ?: ""; set(v) = p.edit().putString("root_phone", v.trim()).apply()
+    /** Password for the root account — applied on every server start. Blank = keep existing. */
+    var rootPassword: String get() = p.getString("root_password", "") ?: ""; set(v) = p.edit().putString("root_password", v).apply()
+    /** Comma-separated phone numbers granted admin role in MeshCall. */
+    var adminPhones: String get() = p.getString("admin_phones", "") ?: ""; set(v) = p.edit().putString("admin_phones", v.trim()).apply()
+    /** phone:password pairs for admin accounts, comma-separated. Blank = keep existing passwords. */
+    var adminPasswords: String get() = p.getString("admin_passwords", "") ?: ""; set(v) = p.edit().putString("admin_passwords", v).apply()
+
+    // ── TURN / STUN ───────────────────────────────────────────────────────────
+    /** e.g. stun:stun.example.com:3478 — leave blank to use Google STUN only. */
+    var stunServer: String get() = p.getString("stun_server", "") ?: ""; set(v) = p.edit().putString("stun_server", v.trim()).apply()
+    /** e.g. turn:turn.example.com:3478 */
+    var turnServer: String get() = p.getString("turn_server", "") ?: ""; set(v) = p.edit().putString("turn_server", v.trim()).apply()
+    var turnUsername: String get() = p.getString("turn_user", "") ?: ""; set(v) = p.edit().putString("turn_user", v.trim()).apply()
+    var turnCredential: String get() = p.getString("turn_cred", "") ?: ""; set(v) = p.edit().putString("turn_cred", v.trim()).apply()
+
+    // ── Family module ─────────────────────────────────────────────────────────
+    /** Master PIN that unlocks the family database. */
+    var rootPin: String get() = p.getString("root_pin", "") ?: ""; set(v) = p.edit().putString("root_pin", v.trim()).apply()
+
     companion object { fun newKey() = "sk-" + java.util.UUID.randomUUID().toString().replace("-", "") }
 }

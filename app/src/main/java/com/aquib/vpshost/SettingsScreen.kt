@@ -56,6 +56,125 @@ fun SettingsScreen(tokenProbe: Probe) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
+        Panel("VoIP: User roles & passwords") {
+            Text("Set which phone numbers have elevated access in MeshCall. Passwords are applied every time the server starts — leave blank to keep the existing password.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var rootPhone by remember { mutableStateOf(prefs.rootPhone) }
+            var rootPassword by remember { mutableStateOf(prefs.rootPassword) }
+            var showRootPw by remember { mutableStateOf(false) }
+            var adminPhones by remember { mutableStateOf(prefs.adminPhones) }
+            var adminPasswords by remember { mutableStateOf(prefs.adminPasswords) }
+            var showAdminPw by remember { mutableStateOf(false) }
+            var rolesSaved by remember { mutableStateOf(false) }
+            LaunchedEffect(rolesSaved) { if (rolesSaved) { delay(2000); rolesSaved = false } }
+
+            Text("Root user", style = MaterialTheme.typography.labelMedium)
+            OutlinedTextField(
+                rootPhone, { rootPhone = it; rolesSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Root phone number", fontSize = 12.sp) },
+                placeholder = { Text("9876543210", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            OutlinedTextField(
+                rootPassword, { rootPassword = it; rolesSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Root password", fontSize = 12.sp) },
+                placeholder = { Text("Leave blank to keep existing", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+                visualTransformation = if (showRootPw) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { TextButton({ showRootPw = !showRootPw }) { Text(if (showRootPw) "Hide" else "Show", fontSize = 12.sp) } },
+            )
+
+            Text("Admin users", style = MaterialTheme.typography.labelMedium)
+            OutlinedTextField(
+                adminPhones, { adminPhones = it; rolesSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Admin phone numbers (comma-separated)", fontSize = 12.sp) },
+                placeholder = { Text("9876543211,9876543212", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            OutlinedTextField(
+                adminPasswords, { adminPasswords = it; rolesSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Admin passwords  (phone:pass,phone:pass)", fontSize = 12.sp) },
+                placeholder = { Text("9876543211:pass1,9876543212:pass2", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+                visualTransformation = if (showAdminPw) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { TextButton({ showAdminPw = !showAdminPw }) { Text(if (showAdminPw) "Hide" else "Show", fontSize = 12.sp) } },
+            )
+            Text("Passwords take effect on next server restart.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SmallButton(if (rolesSaved) "Saved ✓" else "Save", {
+                prefs.rootPhone = rootPhone; prefs.rootPassword = rootPassword
+                prefs.adminPhones = adminPhones; prefs.adminPasswords = adminPasswords
+                rolesSaved = true
+            }, filled = true)
+        }
+
+        Panel("VoIP: TURN / STUN") {
+            Text("TURN is the relay server for calls behind strict firewalls. Leave blank to use Google STUN only. Changes take effect after the server restarts.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var stunServer by remember { mutableStateOf(prefs.stunServer) }
+            var turnServer by remember { mutableStateOf(prefs.turnServer) }
+            var turnUser by remember { mutableStateOf(prefs.turnUsername) }
+            var turnCred by remember { mutableStateOf(prefs.turnCredential) }
+            var showTurnCred by remember { mutableStateOf(false) }
+            var turnSaved by remember { mutableStateOf(false) }
+            LaunchedEffect(turnSaved) { if (turnSaved) { delay(2000); turnSaved = false } }
+            OutlinedTextField(
+                stunServer, { stunServer = it; turnSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("STUN server URL", fontSize = 12.sp) },
+                placeholder = { Text("stun:stun.example.com:3478", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            OutlinedTextField(
+                turnServer, { turnServer = it; turnSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("TURN server URL", fontSize = 12.sp) },
+                placeholder = { Text("turn:turn.example.com:3478", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            OutlinedTextField(
+                turnUser, { turnUser = it; turnSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("TURN username", fontSize = 12.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            OutlinedTextField(
+                turnCred, { turnCred = it; turnSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("TURN credential", fontSize = 12.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+                visualTransformation = if (showTurnCred) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { TextButton({ showTurnCred = !showTurnCred }) { Text(if (showTurnCred) "Hide" else "Show", fontSize = 12.sp) } },
+            )
+            SmallButton(if (turnSaved) "Saved ✓" else "Save", {
+                prefs.stunServer = stunServer; prefs.turnServer = turnServer
+                prefs.turnUsername = turnUser; prefs.turnCredential = turnCred; turnSaved = true
+            }, filled = true)
+        }
+
+        Panel("Family: Security") {
+            Text("The root PIN protects the family database. Set it once; changing it requires re-seeding the database. Changes take effect after the server restarts.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var rootPin by remember { mutableStateOf(prefs.rootPin) }
+            var showPin by remember { mutableStateOf(false) }
+            var pinSaved by remember { mutableStateOf(false) }
+            LaunchedEffect(pinSaved) { if (pinSaved) { delay(2000); pinSaved = false } }
+            OutlinedTextField(
+                rootPin, { rootPin = it; pinSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Root PIN", fontSize = 12.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+                visualTransformation = if (showPin) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { TextButton({ showPin = !showPin }) { Text(if (showPin) "Hide" else "Show", fontSize = 12.sp) } },
+            )
+            SmallButton(if (pinSaved) "Saved ✓" else "Save", {
+                prefs.rootPin = rootPin; pinSaved = true
+            }, filled = true)
+        }
+
         Panel("Remote access") {
             var adminToken by remember { mutableStateOf(prefs.adminToken) }
             var showAdmin by remember { mutableStateOf(false) }
