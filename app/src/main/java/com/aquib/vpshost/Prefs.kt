@@ -53,6 +53,10 @@ class Prefs(context: Context) {
     var turnServer: String get() = p.getString("turn_server", "") ?: ""; set(v) = p.edit().putString("turn_server", v.trim()).apply()
     var turnUsername: String get() = p.getString("turn_user", "") ?: ""; set(v) = p.edit().putString("turn_user", v.trim()).apply()
     var turnCredential: String get() = p.getString("turn_cred", "") ?: ""; set(v) = p.edit().putString("turn_cred", v.trim()).apply()
+    /** Cloudflare TURN key ID (from Cloudflare Calls → TURN keys). */
+    var cfTurnKeyId: String get() = p.getString("cf_turn_key_id", "") ?: ""; set(v) = p.edit().putString("cf_turn_key_id", v.trim()).apply()
+    /** Cloudflare API token with Cloudflare Calls: TURN → Edit permission. */
+    var cfTurnApiToken: String get() = p.getString("cf_turn_api_token", "") ?: ""; set(v) = p.edit().putString("cf_turn_api_token", v.trim()).apply()
 
     // ── Family module ─────────────────────────────────────────────────────────
     /** Master PIN that unlocks the family database. */

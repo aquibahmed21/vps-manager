@@ -111,8 +111,36 @@ fun SettingsScreen(tokenProbe: Probe) {
             }, filled = true)
         }
 
-        Panel("VoIP: TURN / STUN") {
-            Text("TURN is the relay server for calls behind strict firewalls. Leave blank to use Google STUN only. Changes take effect after the server restarts.",
+        Panel("VoIP: Cloudflare TURN (recommended)") {
+            Text("Free relay service for calls behind firewalls. Create a TURN key at dash.cloudflare.com → Calls → TURN, then paste the Key ID and an API token with 'Cloudflare Calls: TURN Edit' permission. Takes effect after restart.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            var cfKeyId by remember { mutableStateOf(prefs.cfTurnKeyId) }
+            var cfToken by remember { mutableStateOf(prefs.cfTurnApiToken) }
+            var showCfToken by remember { mutableStateOf(false) }
+            var cfSaved by remember { mutableStateOf(false) }
+            LaunchedEffect(cfSaved) { if (cfSaved) { delay(2000); cfSaved = false } }
+            OutlinedTextField(
+                cfKeyId, { cfKeyId = it; cfSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("TURN Key ID", fontSize = 12.sp) },
+                placeholder = { Text("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            OutlinedTextField(
+                cfToken, { cfToken = it; cfSaved = false },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("API Token", fontSize = 12.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+                visualTransformation = if (showCfToken) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { TextButton({ showCfToken = !showCfToken }) { Text(if (showCfToken) "Hide" else "Show", fontSize = 12.sp) } },
+            )
+            SmallButton(if (cfSaved) "Saved ✓" else "Save", {
+                prefs.cfTurnKeyId = cfKeyId; prefs.cfTurnApiToken = cfToken; cfSaved = true
+            }, filled = true)
+        }
+
+        Panel("VoIP: TURN / STUN (manual)") {
+            Text("Use your own TURN/STUN server instead of Cloudflare. Leave blank if Cloudflare TURN is configured above. Changes take effect after restart.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             var stunServer by remember { mutableStateOf(prefs.stunServer) }
             var turnServer by remember { mutableStateOf(prefs.turnServer) }
