@@ -134,6 +134,7 @@ private fun CategoryRow(label: String, icon: ImageVector, subtitle: String, onCl
 // ── ICE data types ────────────────────────────────────────────────────────────
 
 private data class TurnEntry(val urls: String, val username: String = "", val credential: String = "")
+private data class IcePreset(val name: String, val obj: JSONObject, val selected: Boolean = false)
 
 // ── ICE config JSON helpers ───────────────────────────────────────────────────
 
@@ -179,37 +180,41 @@ private fun iceConfigToJson(prefs: Prefs): String = JSONObject().apply {
     if (prefs.cfTurnApiToken.isNotBlank()) put("cfTurnApiToken", prefs.cfTurnApiToken)
 }.toString(2)
 
-/** Applies a preset or flat config object — handles both new (arrays) and old (single-field) formats. */
-private fun applyIcePreset(
-    obj: JSONObject, prefs: Prefs,
-    setStunList: (List<String>) -> Unit,
-    setTurnList: (List<TurnEntry>) -> Unit,
+/**
+ * Merges a preset/config object into the existing lists (appends, deduplicates by URL).
+ * Handles both new array format and legacy single-field format.
+ * Returns counts of newly added STUN and TURN entries.
+ */
+private fun mergeIcePreset(
+    obj: JSONObject,
+    stunList: MutableList<String>,
+    turnList: MutableList<TurnEntry>,
     setCfKey: (String) -> Unit,
     setCfToken: (String) -> Unit,
-) {
-    when {
-        obj.has("stunServers") -> {
-            val list = parseStunJson(obj.getJSONArray("stunServers").toString())
-            setStunList(list); prefs.stunServersJson = serializeStunJson(list)
-        }
-        obj.optString("stunServer").isNotBlank() -> {
-            val list = listOf(obj.getString("stunServer"))
-            setStunList(list); prefs.stunServersJson = serializeStunJson(list)
-        }
+): Pair<Int, Int> {
+    var addedStun = 0
+    var addedTurn = 0
+    val newStun: List<String> = when {
+        obj.has("stunServers") -> parseStunJson(obj.getJSONArray("stunServers").toString())
+        obj.optString("stunServer").isNotBlank() -> listOf(obj.getString("stunServer"))
+        else -> emptyList()
     }
-    when {
-        obj.has("turnServers") -> {
-            val list = parseTurnJson(obj.getJSONArray("turnServers").toString())
-            setTurnList(list); prefs.turnServersJson = serializeTurnJson(list)
-        }
-        obj.optString("turnServer").isNotBlank() -> {
-            val entry = TurnEntry(obj.getString("turnServer"), obj.optString("turnUsername"), obj.optString("turnCredential"))
-            val list = listOf(entry)
-            setTurnList(list); prefs.turnServersJson = serializeTurnJson(list)
-        }
+    val newTurn: List<TurnEntry> = when {
+        obj.has("turnServers") -> parseTurnJson(obj.getJSONArray("turnServers").toString())
+        obj.optString("turnServer").isNotBlank() -> listOf(TurnEntry(obj.getString("turnServer"), obj.optString("turnUsername"), obj.optString("turnCredential")))
+        else -> emptyList()
     }
-    obj.optString("cfTurnKeyId").takeIf { it.isNotBlank() }?.also { setCfKey(it); prefs.cfTurnKeyId = it }
-    obj.optString("cfTurnApiToken").takeIf { it.isNotBlank() }?.also { setCfToken(it); prefs.cfTurnApiToken = it }
+    val existingStunUrls = stunList.toSet()
+    for (url in newStun) {
+        if (url !in existingStunUrls) { stunList.add(url); addedStun++ }
+    }
+    val existingTurnUrls = turnList.map { it.urls }.toSet()
+    for (entry in newTurn) {
+        if (entry.urls !in existingTurnUrls) { turnList.add(entry); addedTurn++ }
+    }
+    obj.optString("cfTurnKeyId").takeIf { it.isNotBlank() }?.also { setCfKey(it) }
+    obj.optString("cfTurnApiToken").takeIf { it.isNotBlank() }?.also { setCfToken(it) }
+    return addedStun to addedTurn
 }
 
 // ── VoIP settings ─────────────────────────────────────────────────────────────
@@ -224,7 +229,7 @@ private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
     val stunList = remember { androidx.compose.runtime.mutableStateListOf<String>().also { it.addAll(parseStunJson(prefs.stunServersJson)) } }
     val turnList = remember { androidx.compose.runtime.mutableStateListOf<TurnEntry>().also { it.addAll(parseTurnJson(prefs.turnServersJson)) } }
 
-    var presets   by remember { mutableStateOf<List<Pair<String, JSONObject>>>(emptyList()) }
+    var presets   by remember { mutableStateOf<List<IcePreset>>(emptyList()) }
     var importMsg by remember { mutableStateOf("") }
     LaunchedEffect(importMsg) { if (importMsg.isNotEmpty()) { delay(4000); importMsg = "" } }
 
@@ -243,17 +248,15 @@ private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
             val root = JSONObject(text)
             if (root.has("presets")) {
                 val arr = root.getJSONArray("presets")
-                val list = (0 until arr.length()).map { i ->
-                    val o = arr.getJSONObject(i); o.optString("name", "Preset ${i + 1}") to o
+                presets = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i); IcePreset(o.optString("name", "Preset ${i + 1}"), o)
                 }
-                presets = list
-                importMsg = "${list.size} presets loaded — pick one below"
+                importMsg = "${presets.size} presets loaded — select below"
             } else {
-                applyIcePreset(root, prefs,
-                    { stunList.clear(); stunList.addAll(it) },
-                    { turnList.clear(); turnList.addAll(it) },
-                    { cfKeyId = it }, { cfToken = it })
-                importMsg = "Imported"
+                val (addedStun, addedTurn) = mergeIcePreset(root, stunList, turnList, { cfKeyId = it }, { cfToken = it })
+                prefs.stunServersJson = serializeStunJson(stunList)
+                prefs.turnServersJson = serializeTurnJson(turnList)
+                importMsg = "Merged: +$addedStun STUN, +$addedTurn TURN"
             }
         } catch (e: Exception) { importMsg = "Import failed: ${e.message}" }
     }
@@ -512,20 +515,42 @@ private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
         if (importMsg.isNotEmpty()) Text(importMsg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         if (presets.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            Text("Select a preset to apply:", style = MaterialTheme.typography.labelMedium)
-            presets.forEach { (name, obj) ->
-                OutlinedButton(
+            val selectedCount = presets.count { it.selected }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Select presets to merge:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    val allSelected = presets.all { it.selected }
+                    presets = presets.map { it.copy(selected = !allSelected) }
+                }) { Text(if (presets.all { it.selected }) "None" else "All", fontSize = 12.sp) }
+            }
+            presets.forEachIndexed { idx, preset ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { presets = presets.toMutableList().also { it[idx] = it[idx].copy(selected = !preset.selected) } },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Checkbox(checked = preset.selected, onCheckedChange = { presets = presets.toMutableList().also { l -> l[idx] = l[idx].copy(selected = it) } })
+                    Text(preset.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton(
+                    if (selectedCount > 0) "Merge $selectedCount selected" else "Select presets",
+                    enabled = selectedCount > 0,
                     onClick = {
-                        applyIcePreset(obj, prefs,
-                            { stunList.clear(); stunList.addAll(it) },
-                            { turnList.clear(); turnList.addAll(it) },
-                            { cfKeyId = it }, { cfToken = it })
-                        importMsg = "Applied: $name"
+                        var totalStun = 0; var totalTurn = 0
+                        presets.filter { it.selected }.forEach { p ->
+                            val (s, t) = mergeIcePreset(p.obj, stunList, turnList, { cfKeyId = it }, { cfToken = it })
+                            totalStun += s; totalTurn += t
+                        }
+                        prefs.stunServersJson = serializeStunJson(stunList)
+                        prefs.turnServersJson = serializeTurnJson(turnList)
+                        importMsg = "Merged $selectedCount presets: +$totalStun STUN, +$totalTurn TURN"
                         presets = emptyList()
                     },
-                    modifier = Modifier.fillMaxWidth().height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                ) { Text(name, fontSize = 13.sp, modifier = Modifier.weight(1f)) }
+                    filled = true,
+                )
+                SmallButton("Cancel", { presets = emptyList() })
             }
         }
     }
