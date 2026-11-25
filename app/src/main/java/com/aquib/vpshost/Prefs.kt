@@ -46,13 +46,11 @@ class Prefs(context: Context) {
     /** phone:password pairs for admin accounts, comma-separated. Blank = keep existing passwords. */
     var adminPasswords: String get() = p.getString("admin_passwords", "") ?: ""; set(v) = p.edit().putString("admin_passwords", v).apply()
 
-    // ── TURN / STUN ───────────────────────────────────────────────────────────
-    /** e.g. stun:stun.example.com:3478 — leave blank to use Google STUN only. */
-    var stunServer: String get() = p.getString("stun_server", "") ?: ""; set(v) = p.edit().putString("stun_server", v.trim()).apply()
-    /** e.g. turn:turn.example.com:3478 */
-    var turnServer: String get() = p.getString("turn_server", "") ?: ""; set(v) = p.edit().putString("turn_server", v.trim()).apply()
-    var turnUsername: String get() = p.getString("turn_user", "") ?: ""; set(v) = p.edit().putString("turn_user", v.trim()).apply()
-    var turnCredential: String get() = p.getString("turn_cred", "") ?: ""; set(v) = p.edit().putString("turn_cred", v.trim()).apply()
+    // ── TURN / STUN (multi-server, ordered) ──────────────────────────────────
+    /** JSON array of STUN URL strings, in priority order. e.g. ["stun:a:3478","stun:b:3478"] */
+    var stunServersJson: String get() = p.getString("stun_servers_json", "") ?: ""; set(v) = p.edit().putString("stun_servers_json", v).apply()
+    /** JSON array of {urls,username,credential} objects, in priority order. */
+    var turnServersJson: String get() = p.getString("turn_servers_json", "") ?: ""; set(v) = p.edit().putString("turn_servers_json", v).apply()
     /** Cloudflare TURN key ID (from Cloudflare Calls → TURN keys). */
     var cfTurnKeyId: String get() = p.getString("cf_turn_key_id", "") ?: ""; set(v) = p.edit().putString("cf_turn_key_id", v.trim()).apply()
     /** Cloudflare API token with Cloudflare Calls: TURN → Edit permission. */

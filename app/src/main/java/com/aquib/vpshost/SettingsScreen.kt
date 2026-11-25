@@ -131,49 +131,103 @@ private fun CategoryRow(label: String, icon: ImageVector, subtitle: String, onCl
     }
 }
 
+// ── ICE data types ────────────────────────────────────────────────────────────
+
+private data class TurnEntry(val urls: String, val username: String = "", val credential: String = "")
+
 // ── ICE config JSON helpers ───────────────────────────────────────────────────
 
+private fun parseStunJson(json: String): MutableList<String> {
+    if (json.isBlank()) return mutableListOf()
+    return try {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toMutableList()
+    } catch (_: Exception) { mutableListOf() }
+}
+
+private fun parseTurnJson(json: String): MutableList<TurnEntry> {
+    if (json.isBlank()) return mutableListOf()
+    return try {
+        val arr = JSONArray(json)
+        (0 until arr.length()).mapNotNull { i ->
+            arr.optJSONObject(i)?.let { obj ->
+                val urls = obj.optString("urls").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                TurnEntry(urls, obj.optString("username"), obj.optString("credential"))
+            }
+        }.toMutableList()
+    } catch (_: Exception) { mutableListOf() }
+}
+
+private fun serializeStunJson(list: List<String>): String =
+    JSONArray().also { a -> list.forEach { a.put(it) } }.toString()
+
+private fun serializeTurnJson(list: List<TurnEntry>): String =
+    JSONArray().also { a ->
+        list.forEach { e ->
+            a.put(JSONObject().apply {
+                put("urls", e.urls)
+                if (e.username.isNotBlank()) put("username", e.username)
+                if (e.credential.isNotBlank()) put("credential", e.credential)
+            })
+        }
+    }.toString()
+
 private fun iceConfigToJson(prefs: Prefs): String = JSONObject().apply {
-    put("stunServer",    prefs.stunServer)
-    put("turnServer",    prefs.turnServer)
-    put("turnUsername",  prefs.turnUsername)
-    put("turnCredential", prefs.turnCredential)
-    put("cfTurnKeyId",   prefs.cfTurnKeyId)
-    put("cfTurnApiToken", prefs.cfTurnApiToken)
+    put("stunServers", JSONArray(prefs.stunServersJson.ifBlank { "[]" }))
+    put("turnServers", JSONArray(prefs.turnServersJson.ifBlank { "[]" }))
+    if (prefs.cfTurnKeyId.isNotBlank()) put("cfTurnKeyId", prefs.cfTurnKeyId)
+    if (prefs.cfTurnApiToken.isNotBlank()) put("cfTurnApiToken", prefs.cfTurnApiToken)
 }.toString(2)
 
-/** Applies a single preset object or a flat config object onto the prefs. */
-private fun applyIceJson(obj: JSONObject, prefs: Prefs,
-    setStun: (String) -> Unit, setTurn: (String) -> Unit,
-    setUser: (String) -> Unit, setCred: (String) -> Unit,
-    setCfKey: (String) -> Unit, setCfToken: (String) -> Unit) {
-    obj.optString("stunServer").takeIf { it.isNotEmpty() }?.also { setStun(it); prefs.stunServer = it }
-    obj.optString("turnServer").takeIf { it.isNotEmpty() }?.also { setTurn(it); prefs.turnServer = it }
-    obj.optString("turnUsername").takeIf { it.isNotEmpty() }?.also { setUser(it); prefs.turnUsername = it }
-    obj.optString("turnCredential").takeIf { it.isNotEmpty() }?.also { setCred(it); prefs.turnCredential = it }
-    obj.optString("cfTurnKeyId").takeIf { it.isNotEmpty() }?.also { setCfKey(it); prefs.cfTurnKeyId = it }
-    obj.optString("cfTurnApiToken").takeIf { it.isNotEmpty() }?.also { setCfToken(it); prefs.cfTurnApiToken = it }
+/** Applies a preset or flat config object — handles both new (arrays) and old (single-field) formats. */
+private fun applyIcePreset(
+    obj: JSONObject, prefs: Prefs,
+    setStunList: (List<String>) -> Unit,
+    setTurnList: (List<TurnEntry>) -> Unit,
+    setCfKey: (String) -> Unit,
+    setCfToken: (String) -> Unit,
+) {
+    when {
+        obj.has("stunServers") -> {
+            val list = parseStunJson(obj.getJSONArray("stunServers").toString())
+            setStunList(list); prefs.stunServersJson = serializeStunJson(list)
+        }
+        obj.optString("stunServer").isNotBlank() -> {
+            val list = listOf(obj.getString("stunServer"))
+            setStunList(list); prefs.stunServersJson = serializeStunJson(list)
+        }
+    }
+    when {
+        obj.has("turnServers") -> {
+            val list = parseTurnJson(obj.getJSONArray("turnServers").toString())
+            setTurnList(list); prefs.turnServersJson = serializeTurnJson(list)
+        }
+        obj.optString("turnServer").isNotBlank() -> {
+            val entry = TurnEntry(obj.getString("turnServer"), obj.optString("turnUsername"), obj.optString("turnCredential"))
+            val list = listOf(entry)
+            setTurnList(list); prefs.turnServersJson = serializeTurnJson(list)
+        }
+    }
+    obj.optString("cfTurnKeyId").takeIf { it.isNotBlank() }?.also { setCfKey(it); prefs.cfTurnKeyId = it }
+    obj.optString("cfTurnApiToken").takeIf { it.isNotBlank() }?.also { setCfToken(it); prefs.cfTurnApiToken = it }
 }
 
 // ── VoIP settings ─────────────────────────────────────────────────────────────
 
 @Composable
 private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
-    val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
 
-    // Shared state for all TURN fields so import/presets can populate them
-    var stunServer  by remember { mutableStateOf(prefs.stunServer) }
-    var turnServer  by remember { mutableStateOf(prefs.turnServer) }
-    var turnUser    by remember { mutableStateOf(prefs.turnUsername) }
-    var turnCred    by remember { mutableStateOf(prefs.turnCredential) }
-    var cfKeyId     by remember { mutableStateOf(prefs.cfTurnKeyId) }
-    var cfToken     by remember { mutableStateOf(prefs.cfTurnApiToken) }
+    var cfKeyId by remember { mutableStateOf(prefs.cfTurnKeyId) }
+    var cfToken by remember { mutableStateOf(prefs.cfTurnApiToken) }
 
-    var presets     by remember { mutableStateOf<List<Pair<String, JSONObject>>>(emptyList()) }
-    var importMsg   by remember { mutableStateOf("") }
+    val stunList = remember { androidx.compose.runtime.mutableStateListOf<String>().also { it.addAll(parseStunJson(prefs.stunServersJson)) } }
+    val turnList = remember { androidx.compose.runtime.mutableStateListOf<TurnEntry>().also { it.addAll(parseTurnJson(prefs.turnServersJson)) } }
 
-    // Export launcher — creates a JSON file chosen by the user
+    var presets   by remember { mutableStateOf<List<Pair<String, JSONObject>>>(emptyList()) }
+    var importMsg by remember { mutableStateOf("") }
+    LaunchedEffect(importMsg) { if (importMsg.isNotEmpty()) { delay(4000); importMsg = "" } }
+
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         try {
@@ -182,33 +236,27 @@ private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
         } catch (e: Exception) { importMsg = "Export failed: ${e.message}" }
     }
 
-    // Import launcher — reads a JSON file (flat config or preset list)
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         try {
             val text = ctx.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() } ?: ""
             val root = JSONObject(text)
             if (root.has("presets")) {
-                // Preset file — show picker
                 val arr = root.getJSONArray("presets")
-                val list = mutableListOf<Pair<String, JSONObject>>()
-                for (i in 0 until arr.length()) {
-                    val obj = arr.getJSONObject(i)
-                    list += obj.optString("name", "Preset ${i + 1}") to obj
+                val list = (0 until arr.length()).map { i ->
+                    val o = arr.getJSONObject(i); o.optString("name", "Preset ${i + 1}") to o
                 }
                 presets = list
                 importMsg = "${list.size} presets loaded — pick one below"
             } else {
-                // Flat config — apply directly
-                applyIceJson(root, prefs,
-                    { stunServer = it }, { turnServer = it }, { turnUser = it },
-                    { turnCred = it }, { cfKeyId = it }, { cfToken = it })
+                applyIcePreset(root, prefs,
+                    { stunList.clear(); stunList.addAll(it) },
+                    { turnList.clear(); turnList.addAll(it) },
+                    { cfKeyId = it }, { cfToken = it })
                 importMsg = "Imported"
             }
         } catch (e: Exception) { importMsg = "Import failed: ${e.message}" }
     }
-
-    LaunchedEffect(importMsg) { if (importMsg.isNotEmpty()) { delay(4000); importMsg = "" } }
 
     // User roles
     Panel("User roles & passwords") {
@@ -296,47 +344,159 @@ private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
         }, filled = true)
     }
 
-    // Manual TURN/STUN
-    Panel("TURN / STUN (manual)") {
+    // STUN servers list
+    Panel("STUN servers") {
         Text(
-            "Use your own TURN/STUN server instead of Cloudflare. Leave blank if Cloudflare TURN is configured above. Changes take effect after restart.",
+            "STUN discovers your public IP/port. Add multiple for failover. First entry is tried first. If Cloudflare TURN is configured above these are ignored.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        var showTurnCred by remember { mutableStateOf(false) }
-        var turnSaved by remember { mutableStateOf(false) }
+        var addingStun by remember { mutableStateOf(false) }
+        var newStunUrl by remember { mutableStateOf("") }
+        var stunSaved  by remember { mutableStateOf(false) }
+        LaunchedEffect(stunSaved) { if (stunSaved) { delay(2000); stunSaved = false } }
+
+        stunList.forEachIndexed { idx, url ->
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(url, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f), maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                IconButton(onClick = { if (idx > 0) { stunList.add(idx - 1, stunList.removeAt(idx)) } },
+                    modifier = Modifier.size(32.dp), enabled = idx > 0) {
+                    Icon(Icons.Filled.KeyboardArrowUp, "Move up", modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = { if (idx < stunList.lastIndex) { stunList.add(idx + 1, stunList.removeAt(idx)) } },
+                    modifier = Modifier.size(32.dp), enabled = idx < stunList.lastIndex) {
+                    Icon(Icons.Filled.KeyboardArrowDown, "Move down", modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = { stunList.removeAt(idx) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.Delete, "Remove", modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        if (addingStun) {
+            OutlinedTextField(
+                newStunUrl, { newStunUrl = it },
+                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("STUN URL", fontSize = 12.sp) },
+                placeholder = { Text("stun:stun.example.com:3478", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton("Add", {
+                    if (newStunUrl.isNotBlank()) { stunList.add(newStunUrl.trim()); newStunUrl = ""; addingStun = false }
+                }, filled = true, enabled = newStunUrl.isNotBlank())
+                SmallButton("Cancel", { addingStun = false; newStunUrl = "" })
+            }
+        } else {
+            SmallButton("+ Add STUN", { addingStun = true })
+        }
+        SmallButton(if (stunSaved) "Saved ✓" else "Save list", {
+            prefs.stunServersJson = serializeStunJson(stunList); stunSaved = true
+        }, filled = true, enabled = !stunSaved)
+    }
+
+    // TURN servers list
+    Panel("TURN servers") {
+        Text(
+            "TURN relays media when direct P2P fails (symmetric NAT, strict firewalls). Add multiple for failover. First entry is tried first.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        var addingTurn  by remember { mutableStateOf(false) }
+        var newTurnUrls by remember { mutableStateOf("") }
+        var newTurnUser by remember { mutableStateOf("") }
+        var newTurnCred by remember { mutableStateOf("") }
+        var showNewCred by remember { mutableStateOf(false) }
+        var expandedIdx by remember { mutableStateOf(-1) }
+        var turnSaved   by remember { mutableStateOf(false) }
         LaunchedEffect(turnSaved) { if (turnSaved) { delay(2000); turnSaved = false } }
-        OutlinedTextField(
-            stunServer, { stunServer = it; turnSaved = false },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text("STUN server URL", fontSize = 12.sp) },
-            placeholder = { Text("stun:stun.example.com:3478", fontSize = 13.sp) },
-            textStyle = TextStyle(fontSize = 13.sp),
-        )
-        OutlinedTextField(
-            turnServer, { turnServer = it; turnSaved = false },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text("TURN server URL", fontSize = 12.sp) },
-            placeholder = { Text("turn:turn.example.com:3478", fontSize = 13.sp) },
-            textStyle = TextStyle(fontSize = 13.sp),
-        )
-        OutlinedTextField(
-            turnUser, { turnUser = it; turnSaved = false },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text("TURN username", fontSize = 12.sp) },
-            textStyle = TextStyle(fontSize = 13.sp),
-        )
-        OutlinedTextField(
-            turnCred, { turnCred = it; turnSaved = false },
-            singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text("TURN credential", fontSize = 12.sp) },
-            textStyle = TextStyle(fontSize = 13.sp),
-            visualTransformation = if (showTurnCred) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = { TextButton({ showTurnCred = !showTurnCred }) { Text(if (showTurnCred) "Hide" else "Show", fontSize = 12.sp) } },
-        )
-        SmallButton(if (turnSaved) "Saved ✓" else "Save", {
-            prefs.stunServer = stunServer; prefs.turnServer = turnServer
-            prefs.turnUsername = turnUser; prefs.turnCredential = turnCred; turnSaved = true
-        }, filled = true)
+
+        turnList.forEachIndexed { idx, entry ->
+            val expanded = expandedIdx == idx
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            ) {
+                Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(Modifier.weight(1f).clickable { expandedIdx = if (expanded) -1 else idx }) {
+                            Text(entry.urls, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            if (entry.username.isNotBlank())
+                                Text(entry.username, style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                        }
+                        IconButton(onClick = { if (idx > 0) { turnList.add(idx - 1, turnList.removeAt(idx)); if (expandedIdx == idx) expandedIdx = idx - 1 } },
+                            modifier = Modifier.size(32.dp), enabled = idx > 0) {
+                            Icon(Icons.Filled.KeyboardArrowUp, "Move up", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { if (idx < turnList.lastIndex) { turnList.add(idx + 1, turnList.removeAt(idx)); if (expandedIdx == idx) expandedIdx = idx + 1 } },
+                            modifier = Modifier.size(32.dp), enabled = idx < turnList.lastIndex) {
+                            Icon(Icons.Filled.KeyboardArrowDown, "Move down", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { turnList.removeAt(idx); if (expandedIdx == idx) expandedIdx = -1 },
+                            modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Delete, "Remove", modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    if (expanded) {
+                        var editUrls by remember { mutableStateOf(entry.urls) }
+                        var editUser by remember { mutableStateOf(entry.username) }
+                        var editCred by remember { mutableStateOf(entry.credential) }
+                        var showEditCred by remember { mutableStateOf(false) }
+                        OutlinedTextField(editUrls, { editUrls = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            label = { Text("TURN URL", fontSize = 12.sp) }, textStyle = TextStyle(fontSize = 13.sp))
+                        OutlinedTextField(editUser, { editUser = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Username", fontSize = 12.sp) }, textStyle = TextStyle(fontSize = 13.sp))
+                        OutlinedTextField(editCred, { editCred = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            label = { Text("Credential", fontSize = 12.sp) }, textStyle = TextStyle(fontSize = 13.sp),
+                            visualTransformation = if (showEditCred) VisualTransformation.None else PasswordVisualTransformation(),
+                            trailingIcon = { TextButton({ showEditCred = !showEditCred }) { Text(if (showEditCred) "Hide" else "Show", fontSize = 12.sp) } })
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SmallButton("Update", {
+                                if (editUrls.isNotBlank()) {
+                                    turnList[idx] = TurnEntry(editUrls.trim(), editUser.trim(), editCred)
+                                    expandedIdx = -1
+                                }
+                            }, filled = true, enabled = editUrls.isNotBlank())
+                            SmallButton("Cancel", { expandedIdx = -1 })
+                        }
+                    }
+                }
+            }
+        }
+        if (addingTurn) {
+            OutlinedTextField(newTurnUrls, { newTurnUrls = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("TURN URL", fontSize = 12.sp) },
+                placeholder = { Text("turn:turn.example.com:3478", fontSize = 13.sp) },
+                textStyle = TextStyle(fontSize = 13.sp))
+            OutlinedTextField(newTurnUser, { newTurnUser = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Username", fontSize = 12.sp) }, textStyle = TextStyle(fontSize = 13.sp))
+            OutlinedTextField(newTurnCred, { newTurnCred = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Credential", fontSize = 12.sp) }, textStyle = TextStyle(fontSize = 13.sp),
+                visualTransformation = if (showNewCred) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = { TextButton({ showNewCred = !showNewCred }) { Text(if (showNewCred) "Hide" else "Show", fontSize = 12.sp) } })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallButton("Add", {
+                    if (newTurnUrls.isNotBlank()) {
+                        turnList.add(TurnEntry(newTurnUrls.trim(), newTurnUser.trim(), newTurnCred))
+                        newTurnUrls = ""; newTurnUser = ""; newTurnCred = ""; addingTurn = false
+                    }
+                }, filled = true, enabled = newTurnUrls.isNotBlank())
+                SmallButton("Cancel", { addingTurn = false; newTurnUrls = ""; newTurnUser = ""; newTurnCred = "" })
+            }
+        } else {
+            SmallButton("+ Add TURN", { addingTurn = true })
+        }
+        SmallButton(if (turnSaved) "Saved ✓" else "Save list", {
+            prefs.turnServersJson = serializeTurnJson(turnList); turnSaved = true
+        }, filled = true, enabled = !turnSaved)
     }
 
     // Import / Export / Presets
@@ -356,9 +516,10 @@ private fun VoipSettings(prefs: Prefs, tokenProbe: Probe) {
             presets.forEach { (name, obj) ->
                 OutlinedButton(
                     onClick = {
-                        applyIceJson(obj, prefs,
-                            { stunServer = it }, { turnServer = it }, { turnUser = it },
-                            { turnCred = it }, { cfKeyId = it }, { cfToken = it })
+                        applyIcePreset(obj, prefs,
+                            { stunList.clear(); stunList.addAll(it) },
+                            { turnList.clear(); turnList.addAll(it) },
+                            { cfKeyId = it }, { cfToken = it })
                         importMsg = "Applied: $name"
                         presets = emptyList()
                     },
